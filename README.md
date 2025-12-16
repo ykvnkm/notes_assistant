@@ -36,3 +36,18 @@
 - Структура: корень с `docker-compose.yml`, папки `api/` и `worker/`, docs/, env-файлы.
 - Запуск: `cp .env.example .env`, заполнить хост/порты, поднять нужные сервисы (удалённые или по compose), запустить api и worker.
 - Эндпойнты (набросок): `POST /notes`, `GET /notes/{id}`, `GET /notes/search?q=...`, `GET /notes/similar/{id}`, `GET /graph/tags/{tag}`.
+- Основные функции: CRUD заметок в Postgres, версии в MongoDB, кэш Redis, векторный поиск Qdrant, граф связей Neo4j, очереди RabbitMQ для фоновых задач.
+
+## Что уже есть
+- Подключение к удалённым базам через `.env`.
+- Скрипт `scripts/check_connections.py` для проверки всех сервисов.
+- Минимальный API (FastAPI) с CRUD по заметкам в Postgres:
+  - `POST /notes` — создать заметку `{title, content, tags?}`
+  - `GET /notes/{id}` — получить по id
+  - `GET /notes?q=...&limit=20&offset=0` — список/поиск (ILIKE по title/content)
+- Таблица создаётся автоматически на старте: `notes_<student>` если указан `STUDENT_NAME`, иначе `notes`.
+
+## Как запустить API локально
+1. Установить зависимости: `pip install -r requirements.txt`
+2. Запустить: `uvicorn api.main:app --reload --port 8000`
+3. Проверить: `GET /health`, `GET /ping`, затем CRUD-эндпойнты выше.
