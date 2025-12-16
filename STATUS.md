@@ -19,6 +19,9 @@
 - POST /notes — создать заметку (title, content, tags?), пишет в Postgres, возвращает созданную запись.
 - GET /notes/{id} — получить заметку по id из Postgres.
 - GET /notes?q=...&limit=&offset= — список заметок, либо поиск по подстроке в title/content (ILIKE), с пагинацией.
+- PUT /notes/{id} — обновить заметку (title/content/tags) в Postgres, пишет новую версию в Mongo.
+- GET /notes/{id}/versions — версии заметки из Mongo (последние, по убыванию версии).
+- POST /notes/{id}/restore — восстановить заметку из указанной версии (берёт снапшот из Mongo, пишет в Postgres, создаёт новую версию).
 
 Что дальше (предлагаемое):
 - Добавить сохранение версий заметок в Mongo при создании/обновлении.
@@ -27,6 +30,7 @@
 
 Как работает API сейчас:
 - `main.py` — входная точка FastAPI. При старте читает `.env`, создаёт таблицу в Postgres (если её нет), подключает маршруты и служебные ручки `/health` и `/ping`.
-- `routes.py` — описывает HTTP-ручки `/notes`: создать, получить по id, список/поиск. Делегирует операции в `db.py`, ошибки оборачивает в HTTP коды.
-- `db.py` — общение с Postgres. Собирает имя базы и таблицы с суффиксом `STUDENT_NAME` (нижний регистр), создаёт таблицу с триггером на `updated_at` и GIN-индексом. Функции: `insert_note`, `fetch_note`, `search_notes`.
-- `schemas.py` — Pydantic-схемы. `NoteCreate` валидирует вход (title, content, tags). `NoteOut` описывает ответ (включая `datetime` для created_at/updated_at).
+- `routes.py` — описывает HTTP-ручки `/notes`: создать, получить по id, список/поиск, обновить, показать версии, восстановить из версии. Делегирует операции в `db.py` и `mongo_versions.py`.
+- `db.py` — общение с Postgres. Собирает имя базы и таблицы с суффиксом `STUDENT_NAME` (нижний регистр), создаёт таблицу с триггером на `updated_at` и GIN-индексом. Функции: `insert_note`, `fetch_note`, `search_notes`, `update_note`.
+- `mongo_versions.py` — хранение версий в Mongo: `save_version`, `get_versions`, `get_version`, коллекция `note_versions_<student>`.
+- `schemas.py` — Pydantic-схемы. `NoteCreate` валидирует вход (title, content, tags). `NoteUpdate` для изменений. `NoteRestore` для восстановления из версии. `NoteOut` описывает ответ (включая `datetime` для created_at/updated_at).

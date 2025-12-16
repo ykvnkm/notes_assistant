@@ -139,3 +139,39 @@ def search_notes(q: Optional[str], limit: int = 20, offset: int = 0) -> List[Dic
         cur.execute(sql, params)
         rows = cur.fetchall()
         return [dict(r) for r in rows]
+
+
+def update_note(note_id: int, title: Optional[str], content: Optional[str], tags: Optional[List[str]]) -> Optional[Dict[str, Any]]:
+    table = get_table_name()
+    fields = []
+    params: List[Any] = []
+    if title is not None:
+        fields.append("title = %s")
+        params.append(title)
+    if content is not None:
+        fields.append("content = %s")
+        params.append(content)
+    if tags is not None:
+        fields.append("tags = %s")
+        params.append(tags)
+    if not fields:
+        return fetch_note(note_id)
+
+    params.append(note_id)
+    set_clause = ", ".join(fields)
+
+    with get_connection() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            f"""
+            UPDATE {table}
+            SET {set_clause}
+            WHERE id = %s
+            RETURNING id, title, content, tags, created_at, updated_at;
+            """,
+            params,
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        conn.commit()
+        return dict(row)

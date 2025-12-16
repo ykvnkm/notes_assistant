@@ -10,6 +10,16 @@ class NoteCreate(BaseModel):
     tags: Optional[List[str]] = None
 
 
+class NoteUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
+    content: Optional[str] = Field(None, min_length=1)
+    tags: Optional[List[str]] = None
+
+
+class NoteRestore(BaseModel):
+    version: int = Field(..., ge=1)
+
+
 class NoteOut(BaseModel):
     id: int
     title: str
