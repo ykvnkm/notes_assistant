@@ -79,3 +79,19 @@ def get_notes_by_tag(tag: str, limit: int = 20) -> List[int]:
             limit=limit,
         )
         return [r["note_id"] for r in res]
+
+
+def list_tags(limit: int = 100) -> List[str]:
+    ensure_constraints()
+    drv = get_driver()
+    with drv.session() as session:
+        res = session.run(
+            """
+            MATCH (t:Tag)
+            RETURN t.name AS name
+            ORDER BY name
+            LIMIT $limit
+            """,
+            limit=limit,
+        )
+        return [r["name"] for r in res]

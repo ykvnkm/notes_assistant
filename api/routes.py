@@ -3,6 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from . import cache, db, qdrant_vectors
+from . import queue as mq
 from . import graph
 from .mongo_versions import delete_versions, get_version, get_versions, save_version
 from .schemas import NoteCreate, NoteOut, NoteRestore, NoteUpdate
@@ -22,6 +23,10 @@ def create_note(payload: NoteCreate):
         qdrant_vectors.upsert_note_vector(note)  # если Qdrant недоступен — увидим ошибку в логах
         try:
             graph.upsert_note_with_tags(note)
+        except Exception:
+            pass
+        try:
+            mq.publish_note_event("note_created", note)
         except Exception:
             pass
         return note
@@ -97,6 +102,10 @@ def update_note(note_id: int, payload: NoteUpdate):
         graph.upsert_note_with_tags(note)
     except Exception:
         pass
+    try:
+        mq.publish_note_event("note_updated", note)
+    except Exception:
+        pass
     return note
 
 
@@ -156,6 +165,10 @@ def restore_note(note_id: int, payload: NoteRestore):
         graph.upsert_note_with_tags(restored)
     except Exception:
         pass
+    try:
+        mq.publish_note_event("note_updated", restored)
+    except Exception:
+        pass
     return restored
 
 
@@ -203,6 +216,15 @@ def notes_by_tag(tag: str, limit: int = 20):
     return result
 
 
+@router.get("/tags")
+def list_tags(limit: int = 100):
+    try:
+        tags = graph.list_tags(limit=limit)
+        return tags
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to list tags: {exc}")
+
+
 @router.delete("/notes/{note_id}")
 def delete_note(note_id: int):
     # сначала попробуем удалить из Postgres
@@ -236,6 +258,11 @@ def delete_note(note_id: int):
     # чистим граф в Neo4j
     try:
         graph.delete_note(note_id)
+    except Exception:
+        pass
+
+    try:
+        mq.publish_note_event("note_deleted", {"id": note_id})
     except Exception:
         pass
 
