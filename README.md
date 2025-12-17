@@ -45,8 +45,10 @@
   - `POST /notes` — создать заметку `{title, content, tags?}`
   - `GET /notes/{id}` — получить по id
   - `GET /notes?q=...&limit=20&offset=0` — список/поиск (ILIKE по title/content)
-  - `PUT /notes/{id}` — обновить title/content/tags
-  - `GET /notes/{id}/versions` — версии заметки из MongoDB
+  - `PUT /notes/{id}` — обновить заметку (title/content/tags)
+  - `GET /notes/{id}/versions` — версии заметки (MongoDB)
+  - `POST /notes/{id}/restore` — откатиться на указанную версию (берётся снапшот из Mongo)
+  - `GET /notes/popular?limit=10` — топ популярных (счётчик просмотров в Redis)
 - Таблица создаётся автоматически на старте: `notes_<student>` если указан `STUDENT_NAME`, иначе `notes`.
 
 ## Как запустить API локально

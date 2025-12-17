@@ -2,7 +2,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from . import db
+from . import cache, db
 from .mongo_versions import get_version, get_versions, save_version
 from .schemas import NoteCreate, NoteOut, NoteRestore, NoteUpdate
 
@@ -14,19 +14,58 @@ def create_note(payload: NoteCreate):
     try:
         note = db.insert_note(payload.title, payload.content, payload.tags)
         save_version(note)
+        try:
+            cache.cache_note(note)
+        except Exception:
+            pass  # кэш не критичен
         return note
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to create note: {exc}")
 
 
+@router.get("/notes/popular")
+def popular_notes(limit: int = 10):
+    try:
+        top = cache.get_top_popular(limit)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to read popularity: {exc}")
+
+    result = []
+    for note_id, score in top:
+        # берём из кэша или базы
+        note = cache.get_cached_note(note_id)
+        if not note:
+            note = db.fetch_note(note_id)
+        if note:
+            result.append({"note": note, "score": score})
+        else:
+            result.append({"note_id": note_id, "score": score, "error": "not found"})
+    return result
+
+
 @router.get("/notes/{note_id}", response_model=NoteOut)
 def get_note(note_id: int):
+    # сначала пробуем кэш
+    cached = cache.get_cached_note(note_id)
+    if cached:
+        try:
+            cache.bump_popularity(note_id)
+        except Exception:
+            pass
+        return cached
+
     try:
         note = db.fetch_note(note_id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to fetch note: {exc}")
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+
+    try:
+        cache.cache_note(note)
+        cache.bump_popularity(note_id)
+    except Exception:
+        pass
     return note
 
 
@@ -43,6 +82,10 @@ def update_note(note_id: int, payload: NoteUpdate):
     except Exception as exc:
         # не ломаем основной ответ, просто логируем деталь в detail
         raise HTTPException(status_code=500, detail=f"Note updated, but failed to save version: {exc}")
+    try:
+        cache.cache_note(note)
+    except Exception:
+        pass
     return note
 
 
@@ -53,6 +96,8 @@ def list_notes(q: Optional[str] = Query(None, description="Search query"), limit
         return notes
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to list notes: {exc}")
+
+
 
 
 @router.get("/notes/{note_id}/versions")
@@ -91,4 +136,8 @@ def restore_note(note_id: int, payload: NoteRestore):
         raise HTTPException(
             status_code=500, detail=f"Note restored, but failed to save new version: {exc}"
         )
+    try:
+        cache.cache_note(restored)
+    except Exception:
+        pass
     return restored
