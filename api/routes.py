@@ -2,7 +2,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from . import cache, db
+from . import cache, db, qdrant_vectors
 from .mongo_versions import get_version, get_versions, save_version
 from .schemas import NoteCreate, NoteOut, NoteRestore, NoteUpdate
 
@@ -18,6 +18,7 @@ def create_note(payload: NoteCreate):
             cache.cache_note(note)
         except Exception:
             pass  # кэш не критичен
+        qdrant_vectors.upsert_note_vector(note)  # если Qdrant недоступен — увидим ошибку в логах
         return note
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to create note: {exc}")
@@ -86,6 +87,7 @@ def update_note(note_id: int, payload: NoteUpdate):
         cache.cache_note(note)
     except Exception:
         pass
+    qdrant_vectors.upsert_note_vector(note)
     return note
 
 
@@ -140,4 +142,35 @@ def restore_note(note_id: int, payload: NoteRestore):
         cache.cache_note(restored)
     except Exception:
         pass
+    qdrant_vectors.upsert_note_vector(restored)
     return restored
+
+
+@router.get("/notes/{note_id}/similar")
+def similar_notes(note_id: int, limit: int = 5):
+    try:
+        note = db.fetch_note(note_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch note: {exc}")
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    try:
+        raw = qdrant_vectors.search_similar(note, limit=limit + 1)  # +1, чтобы можно было потом отфильтровать саму заметку
+        filtered = []
+        for r in raw:
+            rid = r.get("note_id")
+            if rid is None:
+                continue
+            # пропускаем саму заметку, если она попала в выдачу
+            if rid == note_id:
+                continue
+            # пробуем подтянуть детали заметки
+            details = db.fetch_note(int(rid))
+            if not details:
+                continue
+            filtered.append({"score": r.get("score"), "note": details})
+            if len(filtered) == limit:
+                break
+        return filtered
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to search similar: {exc}")
