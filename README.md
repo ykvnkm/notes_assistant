@@ -50,6 +50,7 @@
   - `POST /notes/{id}/restore` — откатиться на указанную версию (берётся снапшот из Mongo)
   - `GET /notes/popular?limit=10` — топ популярных (счётчик просмотров в Redis)
   - `GET /notes/{id}/similar?limit=5` — похожие заметки (Qdrant, косинусная близость, эмбеддинг-заглушка)
+  - `DELETE /notes/{id}` — удалить заметку (Postgres), зачистка кэша/версий/Qdrant
 - Таблица создаётся автоматически на старте: `notes_<student>` если указан `STUDENT_NAME`, иначе `notes`.
 
 Qdrant

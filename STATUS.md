@@ -24,6 +24,7 @@
 - POST /notes/{id}/restore — восстановить заметку из указанной версии (берёт снапшот из Mongo, пишет в Postgres, создаёт новую версию).
 - GET /notes/popular?limit=10 — топ заметок по просмотрам (счётчики в Redis).
 - GET /notes/{id}/similar?limit=5 — поиск похожих заметок в Qdrant (эмбеддинг-заглушка на sha256 текста).
+- DELETE /notes/{id} — удалить заметку (Postgres), почистить кэш Redis, версии в Mongo, точку в Qdrant.
 
 Что дальше (предлагаемое):
 - Добавить сохранение версий заметок в Mongo при создании/обновлении.
@@ -33,8 +34,8 @@
 Как работает API сейчас:
 - `main.py` — входная точка FastAPI. При старте читает `.env`, создаёт таблицу в Postgres (если её нет), подключает маршруты и служебные ручки `/health` и `/ping`.
 - `routes.py` — описывает HTTP-ручки `/notes`: создать, получить по id, список/поиск, обновить, показать версии, восстановить из версии. Делегирует операции в `db.py` и `mongo_versions.py`.
-- `db.py` — общение с Postgres. Собирает имя базы и таблицы с суффиксом `STUDENT_NAME` (нижний регистр), создаёт таблицу с триггером на `updated_at` и GIN-индексом. Функции: `insert_note`, `fetch_note`, `search_notes`, `update_note`.
-- `mongo_versions.py` — хранение версий в Mongo: `save_version`, `get_versions`, `get_version`, коллекция `note_versions_<student>`.
+- `db.py` — общение с Postgres. Собирает имя базы и таблицы с суффиксом `STUDENT_NAME` (нижний регистр), создаёт таблицу с триггером на `updated_at` и GIN-индексом. Функции: `insert_note`, `fetch_note`, `search_notes`, `update_note`, `delete_note`.
+- `mongo_versions.py` — хранение версий в Mongo: `save_version`, `get_versions`, `get_version`, `delete_versions`, коллекция `note_versions_<student>`.
 - `cache.py` — работа с Redis: кэш заметок (key `note:<id>`, TTL по умолчанию 120 c), счётчик популярности в sorted set (`popular_notes`).
 - `qdrant_vectors.py` — работа с Qdrant: создаёт коллекцию `notes_vectors_<student>`, вычисляет эмбеддинг-заглушку (sha256 текста) и пишет/ищет точки.
 - `schemas.py` — Pydantic-схемы. `NoteCreate` валидирует вход (title, content, tags). `NoteUpdate` для изменений. `NoteRestore` для восстановления из версии. `NoteOut` описывает ответ (включая `datetime` для created_at/updated_at).

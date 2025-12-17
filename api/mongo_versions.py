@@ -86,3 +86,12 @@ def get_version(note_id: int, version: int) -> Optional[Dict[str, Any]]:
         return None
     doc["_id"] = str(doc["_id"])
     return doc
+
+
+def delete_versions(note_id: int) -> int:
+    cfg = get_db_and_collection()
+    client = get_client()
+    db = client[cfg["db_name"]]
+    coll = db[cfg["collection"]]
+    res = coll.delete_many({"note_id": note_id})
+    return res.deleted_count

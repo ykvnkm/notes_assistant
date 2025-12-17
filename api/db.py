@@ -175,3 +175,18 @@ def update_note(note_id: int, title: Optional[str], content: Optional[str], tags
             return None
         conn.commit()
         return dict(row)
+
+
+def delete_note(note_id: int) -> bool:
+    table = get_table_name()
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            DELETE FROM {table}
+            WHERE id = %s;
+            """,
+            (note_id,),
+        )
+        deleted = cur.rowcount
+        conn.commit()
+        return deleted > 0

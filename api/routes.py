@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from . import cache, db, qdrant_vectors
-from .mongo_versions import get_version, get_versions, save_version
+from .mongo_versions import delete_versions, get_version, get_versions, save_version
 from .schemas import NoteCreate, NoteOut, NoteRestore, NoteUpdate
 
 router = APIRouter()
@@ -174,3 +174,36 @@ def similar_notes(note_id: int, limit: int = 5):
         return filtered
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to search similar: {exc}")
+
+
+@router.delete("/notes/{note_id}")
+def delete_note(note_id: int):
+    # сначала попробуем удалить из Postgres
+    try:
+        deleted = db.delete_note(note_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to delete note: {exc}")
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    # чистим версии в Mongo (не обязательно, но полезно)
+    try:
+        delete_versions(note_id)
+    except Exception:
+        pass
+
+    # чистим кэш
+    try:
+        cache_key = f"note:{note_id}"
+        client = cache.get_client()
+        client.delete(cache_key)
+    except Exception:
+        pass
+
+    # чистим точку в Qdrant
+    try:
+        qdrant_vectors.delete_note_vector(note_id)
+    except Exception:
+        pass
+
+    return {"status": "deleted", "note_id": note_id}

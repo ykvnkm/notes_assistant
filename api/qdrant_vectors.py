@@ -157,3 +157,13 @@ def search_similar(note: Dict[str, Any], limit: int = 5) -> List[Dict[str, Any]]
             }
         )
     return results
+
+
+def delete_note_vector(note_id: int) -> None:
+    client = get_client()
+    col = get_collection_name()
+    try:
+        client.delete(collection_name=col, points_selector=[note_id])
+    except Exception:
+        # Если коллекции нет или точка не найдена — просто игнорируем
+        pass
