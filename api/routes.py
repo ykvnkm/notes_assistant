@@ -3,6 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from . import cache, db, qdrant_vectors
+from . import graph
 from .mongo_versions import delete_versions, get_version, get_versions, save_version
 from .schemas import NoteCreate, NoteOut, NoteRestore, NoteUpdate
 
@@ -19,6 +20,10 @@ def create_note(payload: NoteCreate):
         except Exception:
             pass  # кэш не критичен
         qdrant_vectors.upsert_note_vector(note)  # если Qdrant недоступен — увидим ошибку в логах
+        try:
+            graph.upsert_note_with_tags(note)
+        except Exception:
+            pass
         return note
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to create note: {exc}")
@@ -88,6 +93,10 @@ def update_note(note_id: int, payload: NoteUpdate):
     except Exception:
         pass
     qdrant_vectors.upsert_note_vector(note)
+    try:
+        graph.upsert_note_with_tags(note)
+    except Exception:
+        pass
     return note
 
 
@@ -143,6 +152,10 @@ def restore_note(note_id: int, payload: NoteRestore):
     except Exception:
         pass
     qdrant_vectors.upsert_note_vector(restored)
+    try:
+        graph.upsert_note_with_tags(restored)
+    except Exception:
+        pass
     return restored
 
 
@@ -176,6 +189,20 @@ def similar_notes(note_id: int, limit: int = 5):
         raise HTTPException(status_code=500, detail=f"Failed to search similar: {exc}")
 
 
+@router.get("/graph/tags/{tag}")
+def notes_by_tag(tag: str, limit: int = 20):
+    try:
+        note_ids = graph.get_notes_by_tag(tag, limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to query graph: {exc}")
+    result = []
+    for nid in note_ids:
+        note = db.fetch_note(int(nid))
+        if note:
+            result.append(note)
+    return result
+
+
 @router.delete("/notes/{note_id}")
 def delete_note(note_id: int):
     # сначала попробуем удалить из Postgres
@@ -203,6 +230,12 @@ def delete_note(note_id: int):
     # чистим точку в Qdrant
     try:
         qdrant_vectors.delete_note_vector(note_id)
+    except Exception:
+        pass
+
+    # чистим граф в Neo4j
+    try:
+        graph.delete_note(note_id)
     except Exception:
         pass
 

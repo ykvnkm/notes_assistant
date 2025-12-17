@@ -25,6 +25,7 @@
 - GET /notes/popular?limit=10 — топ заметок по просмотрам (счётчики в Redis).
 - GET /notes/{id}/similar?limit=5 — поиск похожих заметок в Qdrant (эмбеддинг-заглушка на sha256 текста).
 - DELETE /notes/{id} — удалить заметку (Postgres), почистить кэш Redis, версии в Mongo, точку в Qdrant.
+- GET /graph/tags/{tag} — заметки с тегом (узлы/связи в Neo4j, детали тянем из Postgres).
 
 Что дальше (предлагаемое):
 - Добавить сохранение версий заметок в Mongo при создании/обновлении.
@@ -38,6 +39,7 @@
 - `mongo_versions.py` — хранение версий в Mongo: `save_version`, `get_versions`, `get_version`, `delete_versions`, коллекция `note_versions_<student>`.
 - `cache.py` — работа с Redis: кэш заметок (key `note:<id>`, TTL по умолчанию 120 c), счётчик популярности в sorted set (`popular_notes`).
 - `qdrant_vectors.py` — работа с Qdrant: создаёт коллекцию `notes_vectors_<student>`, вычисляет эмбеддинг-заглушку (sha256 текста) и пишет/ищет точки.
+- `graph.py` — работа с Neo4j: узлы `Note`/`Tag`, связи `TAGGED_WITH`, функции upsert/delete/read по тегам.
 - `schemas.py` — Pydantic-схемы. `NoteCreate` валидирует вход (title, content, tags). `NoteUpdate` для изменений. `NoteRestore` для восстановления из версии. `NoteOut` описывает ответ (включая `datetime` для created_at/updated_at).
 
 Как работает кэш и топ в Redis:
