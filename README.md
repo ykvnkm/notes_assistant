@@ -1,73 +1,84 @@
 # Notes Assistant (multi-DB demo)
-===============================
 
-## Идея проекта
-“Персональный помощник заметок”: веб-API, где пользователь создаёт заметки; быстрый поиск по тексту, поиск похожих заметок (векторный), граф связей между заметками/темами.
+Веб-API и веб-обёртка для заметок, показывающие работу сразу с несколькими хранилищами и очередью задач.
 
-### Что используется:
-- PostgreSQL — хранение пользователей, заметок, тегов, статистики.
-- Redis — кэш популярных заметок и очереди rate limit/session store.
-- MongoDB — хранение версий заметок и вложений (JSON + бинарь).
-- Qdrant — векторный поиск похожих заметок (эмбеддинги текста).
-- Neo4j — граф связей “заметка ↔ тема/тег”, “заметка ↔ заметка” (желательно).
-- RabbitMQ — фоновые задачи: генерация эмбеддингов и построение графовых связей после создания/обновления заметки.
+## Идея
+- CRUD заметок с кэшем и счётчиком популярности.
+- Версионирование заметок (MongoDB) и откат к версии.
+- Векторный поиск похожих заметок (Qdrant).
+- Граф связей «заметка ↔ тег» (Neo4j) и выборка по тегам.
+- События о CRUD заметок в RabbitMQ.
 
-## Базовая архитектура (простая микросервисная)
-- api (FastAPI/Express): принимает запросы, пишет в Postgres, кладёт задания в RabbitMQ, читает из Redis кэш.
-- worker (Python/Node): потребляет очереди из RabbitMQ, генерирует эмбеддинги, пишет в Qdrant, обновляет Neo4j, сохраняет версию в MongoDB.
-- db: docker-compose для всех сервисов (Postgres, Redis, MongoDB, Qdrant, Neo4j, RabbitMQ). Можно держать всё в одном репо с двумя сервисами (api и worker) и compose в корне.
+## Архитектура
+- **FastAPI** (директория `api/`) — один сервис, подключается ко всем БД и очереди.
+- **БД/сервисы:**
+  - Postgres — основное хранилище заметок.
+  - MongoDB — версии заметок.
+  - Redis — кэш заметок и счётчик популярности.
+  - Qdrant — векторный поиск похожих заметок.
+  - Neo4j — граф тегов/заметок.
+  - RabbitMQ — события `note_created/updated/deleted`.
+- **Веб-UI** (`web/index.html`) — страница с карточками для всех запросов.
 
-### Минимальный функционал
-- Создать/обновить/получить заметку (REST).
-- Быстрый поиск по тексту (Postgres GIN по tsvector).
-- Поиск похожих заметок (Qdrant, косинусная близость).
-- Граф связей по тегам (Neo4j: вершины Note, Tag).
-- Версионирование заметок и вложений (MongoDB: коллекции note_versions, attachments).
-- Кэш: топ-N популярных заметок (Redis, TTL).
-- Очереди: при создании/обновлении заметки отправить в RabbitMQ задачу `build_embeddings_and_graph`.
+## Структура
+- `api/` — код сервиса: `main.py`, `routes.py`, `db.py`, `mongo_versions.py`, `cache.py`, `qdrant_vectors.py`, `graph.py`, `queue.py`, `schemas.py`, `__init__.py`.
+- `web/` — веб-обёртка (статические файлы, точка входа `index.html`).
+- `scripts/` — утилиты:
+  - `check_connections.py` — проверка всех сервисов из `.env`.
+  - `consume_queue.py` — простой консюмер RabbitMQ для просмотра событий.
+  - `qdrant_inspect.py` — инспекция коллекций/точек Qdrant.
+- `docker-compose.yml` — локальный стенд (если нужен).
+- `.env.example` — шаблон переменных окружения.
+- `requirements.txt` — зависимости.
 
-## Потоки
-- API сохраняет заметку в Postgres, версию в MongoDB, пушит задачу в RabbitMQ.
-- Worker берёт задачу, генерит эмбеддинг (stub/fake), пишет в Qdrant, обновляет Neo4j связи, обновляет кэш Redis.
+## Эндпойнты и функционал
+- **Заметки (Postgres + Redis):**
+  - `POST /notes` — создать заметку (кэшируется, идёт в очередь, Qdrant, Neo4j).
+  - `GET /notes/{id}` — получить (кэш + инкремент популярности).
+  - `PUT /notes/{id}` — обновить (кэш, версия в MongoDB, Qdrant, Neo4j, очередь).
+  - `DELETE /notes/{id}` — удалить (чистит кэш, версии, Qdrant, Neo4j, очередь).
+  - `GET /notes?q=&limit=&offset=` — список/поиск (ILIKE по title/content).
+  - `GET /notes/popular` — топ по просмотрам (Redis sorted set).
+- **Версии (MongoDB):**
+  - `GET /notes/{id}/versions` — посмотреть версии.
+  - `POST /notes/{id}/restore` — откат к версии (создаёт новую версию).
+- **Похожие (Qdrant):**
+  - `GET /notes/{id}/similar?limit=` — возвращает исходную заметку и список похожих.
+- **Теги (Neo4j):**
+  - `GET /tags?limit=` — список тегов.
+  - `GET /graph/tags/{tag}?limit=` — заметки с этим тегом (детали из Postgres).
+- **События (RabbitMQ):**
+  - При create/update/delete публикуется `{action, note}` в очередь `notes_tasks_<student>` (или `RABBITMQ_QUEUE`).
 
-**Тестовый сценарий:** создать пару заметок с общими тегами, вызвать поиск и похожие, посмотреть граф.
+## Переменные окружения (основные)
+- `STUDENT_NAME` — суффикс для таблиц/коллекций/очереди по умолчанию.
+- Postgres: `POSTGRES_HOST/PORT/USER/PASSWORD/DB`.
+- Mongo: `MONGO_HOST/PORT/USER/PASSWORD/DB`, `MONGO_AUTH_SOURCE`.
+- Redis: `REDIS_HOST/PORT/DB`, `REDIS_NOTE_TTL`, `REDIS_POPULAR_KEY`.
+- Qdrant: `QDRANT_HOST/PORT`, `QDRANT_COLLECTION` (или `notes_vectors_<student>`), `QDRANT_VECTOR_SIZE`.
+- Neo4j: `NEO4J_HOST/PORT/USER/PASSWORD`.
+- RabbitMQ: `RABBITMQ_HOST/PORT/USER/PASSWORD`, `RABBITMQ_QUEUE` (или `notes_tasks_<student>`).
 
-## Структура, запуск, эндпойнты (черновик)
-- Структура: корень с `docker-compose.yml`, папки `api/` и `worker/`, docs/, env-файлы.
-- Запуск: `cp .env.example .env`, заполнить хост/порты, поднять нужные сервисы (удалённые или по compose), запустить api и worker.
-- Эндпойнты (набросок): `POST /notes`, `GET /notes/{id}`, `GET /notes/search?q=...`, `GET /notes/similar/{id}`, `GET /graph/tags/{tag}`.
-- Основные функции: CRUD заметок в Postgres, версии в MongoDB, кэш Redis, векторный поиск Qdrant, граф связей Neo4j, очереди RabbitMQ для фоновых задач.
-
-## Что уже есть
-- Подключение к удалённым базам через `.env`.
-- Скрипт `scripts/check_connections.py` для проверки всех сервисов.
-- Минимальный API (FastAPI) с CRUD по заметкам в Postgres:
-  - `POST /notes` — создать заметку `{title, content, tags?}`
-  - `GET /notes/{id}` — получить по id
-  - `GET /notes?q=...&limit=20&offset=0` — список/поиск (ILIKE по title/content)
-  - `PUT /notes/{id}` — обновить заметку (title/content/tags)
-  - `GET /notes/{id}/versions` — версии заметки (MongoDB)
-  - `POST /notes/{id}/restore` — откатиться на указанную версию (берётся снапшот из Mongo)
-  - `GET /notes/popular?limit=10` — топ популярных (счётчик просмотров в Redis)
-  - `GET /notes/{id}/similar?limit=5` — похожие заметки (Qdrant, косинусная близость, эмбеддинг-заглушка)
-  - `DELETE /notes/{id}` — удалить заметку (Postgres), зачистка кэша/версий/Qdrant
-  - `GET /graph/tags/{tag}` — заметки с тегом (читаем из Neo4j, подтягиваем детали из Postgres)
-  - `GET /tags` — список тегов (Neo4j)
-- При создании/обновлении/удалении отправляется событие в RabbitMQ (очередь `notes_tasks` по умолчанию).
-- Таблица создаётся автоматически на старте: `notes_<student>` если указан `STUDENT_NAME`, иначе `notes`.
-
-Qdrant
-- По умолчанию коллекция создаётся автоматически как `notes_vectors_<student>`.
-- Если нужно использовать уже существующую коллекцию (от преподавателя) — укажи в `.env` `QDRANT_COLLECTION=имя_коллекции`. Если такой коллекции нет, будет ошибка при попытке записи.
-- Размер вектора: можно задать `QDRANT_VECTOR_SIZE`. Если не задан, используется размер существующей коллекции, иначе дефолт 64. Ошибка `expected dim: X, got Y` значит, что размер вектора не совпадает с конфигурацией коллекции.
- - Если хочешь новую коллекцию с другой размерностью и "нормальным" эмбеддингом, задай новое имя в `QDRANT_COLLECTION` (чтобы не конфликтовать со старой) и `QDRANT_VECTOR_SIZE` (например, 128). Создание произойдёт автоматически при первом апсерте.
-
-RabbitMQ
-- Подключение через `.env`: `RABBITMQ_HOST/PORT/USER/PASSWORD`, очередь `RABBITMQ_QUEUE` (по умолчанию `notes_tasks`).
-- При создании/обновлении/удалении заметки отправляется JSON `{action: note_created|note_updated|note_deleted, note: {...}}`.
-- Воркера-подписчика пока нет — его можно добавить отдельно (pika/asyncio, amqp).
-
-## Как запустить API локально
-1. Установить зависимости: `pip install -r requirements.txt`
-2. Запустить: `uvicorn api.main:app --reload --port 8000`
-3. Проверить: `GET /health`, `GET /ping`, затем CRUD-эндпойнты выше.
+## Запуск
+1) Скопировать конфиг и заполнить:
+   ```bash
+   cp .env.example .env
+   # указать STUDENT_NAME и хост/порты сервисов
+   ```
+2) Установить зависимости:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3) (Опционально) проверить подключения:
+   ```bash
+   python scripts/check_connections.py
+   ```
+4) Запустить API:
+   ```bash
+   uvicorn api.main:app --reload --port 8000
+   ```
+5) Веб-UI: открыть `http://localhost:8000/web/` и использовать карточки для всех запросов.
+6) RabbitMQ консюмер (для просмотра событий):
+   ```bash
+   python scripts/consume_queue.py
+   ```
