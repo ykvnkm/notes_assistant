@@ -2,13 +2,19 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from . import cache, db, qdrant_vectors
+from . import cache, db, graph, qdrant_vectors
 from . import queue as mq
-from . import graph
 from .mongo_versions import delete_versions, get_version, get_versions, save_version
 from .schemas import NoteCreate, NoteOut, NoteRestore, NoteUpdate
 
 router = APIRouter()
+
+
+def _safe_publish(action: str, payload):
+    try:
+        mq.publish_note_event(action, payload)
+    except Exception as exc:
+        print(f"[rabbitmq] failed to publish {action}: {exc}")
 
 
 @router.post("/notes", response_model=NoteOut)
@@ -25,10 +31,7 @@ def create_note(payload: NoteCreate):
             graph.upsert_note_with_tags(note)
         except Exception:
             pass
-        try:
-            mq.publish_note_event("note_created", note)
-        except Exception:
-            pass
+        _safe_publish("note_created", note)
         return note
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to create note: {exc}")
@@ -102,10 +105,7 @@ def update_note(note_id: int, payload: NoteUpdate):
         graph.upsert_note_with_tags(note)
     except Exception:
         pass
-    try:
-        mq.publish_note_event("note_updated", note)
-    except Exception:
-        pass
+    _safe_publish("note_updated", note)
     return note
 
 
@@ -116,8 +116,6 @@ def list_notes(q: Optional[str] = Query(None, description="Search query"), limit
         return notes
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to list notes: {exc}")
-
-
 
 
 @router.get("/notes/{note_id}/versions")
@@ -165,10 +163,7 @@ def restore_note(note_id: int, payload: NoteRestore):
         graph.upsert_note_with_tags(restored)
     except Exception:
         pass
-    try:
-        mq.publish_note_event("note_updated", restored)
-    except Exception:
-        pass
+    _safe_publish("note_updated", restored)
     return restored
 
 
@@ -197,7 +192,7 @@ def similar_notes(note_id: int, limit: int = 5):
             filtered.append({"score": r.get("score"), "note": details})
             if len(filtered) == limit:
                 break
-        return filtered
+        return {"source": note, "similar": filtered}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to search similar: {exc}")
 
@@ -261,9 +256,6 @@ def delete_note(note_id: int):
     except Exception:
         pass
 
-    try:
-        mq.publish_note_event("note_deleted", {"id": note_id})
-    except Exception:
-        pass
+    _safe_publish("note_deleted", {"id": note_id})
 
     return {"status": "deleted", "note_id": note_id}

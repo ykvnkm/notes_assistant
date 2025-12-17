@@ -1,7 +1,12 @@
 import os
 
+from pathlib import Path
+
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from .db import ensure_table_exists
 from .routes import router
@@ -10,6 +15,14 @@ from .routes import router
 def create_app() -> FastAPI:
     load_dotenv()  # подтягиваем .env на старте
     app = FastAPI(title="Notes Assistant API")
+    # Разрешаем CORS для локального теста UI
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.on_event("startup")
     def _init_db():
@@ -33,6 +46,14 @@ def create_app() -> FastAPI:
     @app.get("/ping")
     def ping():
         return {"message": "pong"}
+
+    # Статика с веб-обёрткой (берём абсолютный путь, чтобы не зависеть от cwd)
+    web_dir = Path(__file__).resolve().parent.parent / "web"
+    app.mount("/web", StaticFiles(directory=web_dir, html=True), name="web")
+
+    @app.get("/")
+    def index():
+        return RedirectResponse(url="/web/")
 
     app.include_router(router)
 

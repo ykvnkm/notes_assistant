@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Notes Assistant UI</title>
+  <style>
+    :root {
+      --bg: #f5f5f7;
+      --card: #ffffff;
+      --border: #e5e5ea;
+      --text: #1c1c1e;
+      --muted: #6e6e73;
+      --accent: #ffcc00;
+      --accent-2: #ffd866;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'SF Pro Display', -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 24px; border-bottom: 1px solid var(--border); position: sticky; top: 0; backdrop-filter: blur(10px); background: rgba(245,245,247,0.9); z-index: 1; }
+    h1 { margin: 0 0 6px; font-weight: 700; letter-spacing: -0.02em; }
+    p { margin: 0; color: var(--muted); }
+    main { padding: 20px; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+    .card h3 { margin: 0 0 6px; font-size: 18px; }
+    .desc { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+    label { display: block; margin: 6px 0 2px; color: var(--muted); font-size: 13px; }
+    input, textarea { width: 100%; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--border); background: #fdfdfd; color: var(--text); }
+    textarea { resize: vertical; }
+    button { margin-top: 8px; padding: 9px 14px; border: none; border-radius: 10px; cursor: pointer; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #3c3c3e; font-weight: 700; box-shadow: 0 8px 16px rgba(255,204,0,0.35); }
+    button.secondary { background: #efeff4; color: #3c3c3e; box-shadow: none; }
+    .result { margin-top: 10px; padding: 10px; border-radius: 10px; background: #f7f7fa; border: 1px solid var(--border); min-height: 60px; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 12px; background: rgba(255,204,0,0.2); color: #946200; margin: 2px 4px 2px 0; font-size: 12px; }
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; }
+    .section-title { grid-column: 1 / -1; font-weight: 700; color: #3c3c3e; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Notes Assistant UI</h1>
+    <p>Мини-клиент для всех API-запросов (в стиле Apple Notes).</p>
+    <div class="row" style="margin-top:10px;">
+      <div>
+        <label>Базовый URL</label>
+        <input id="baseUrl" value="http://localhost:8000">
+      </div>
+      <div>
+        <label>Статус</label>
+        <div id="globalStatus" class="result" style="min-height:40px;">Готово</div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="section-title">Создать / Обновить / Удалить</div>
+    <div class="card">
+      <h3>Создать заметку</h3>
+      <div class="desc">POST /notes</div>
+      <label>Заголовок</label><input id="cTitle" placeholder="Например: Идея проекта">
+      <label>Содержимое</label><textarea id="cContent" rows="3" placeholder="Текст заметки"></textarea>
+      <label>Теги (через запятую)</label><input id="cTags" placeholder="study, demo">
+      <button onclick="createNote()">Создать</button>
+      <div id="resCreate" class="result"></div>
+    </div>
+
+    <div class="card">
+      <h3>Обновить заметку</h3>
+      <div class="desc">PUT /notes/{id}</div>
+      <label>ID</label><input id="uId" placeholder="например: 1">
+      <label>Новый заголовок</label><input id="uTitle">
+      <label>Новый текст</label><textarea id="uContent" rows="3"></textarea>
+      <label>Новые теги (через запятую)</label><input id="uTags">
+      <button onclick="updateNote()">Обновить</button>
+      <div id="resUpdate" class="result"></div>
+    </div>
+
+    <div class="card">
+      <h3>Удалить заметку</h3>
+      <div class="desc">DELETE /notes/{id}</div>
+      <label>ID</label><input id="dId" placeholder="например: 1">
+      <button class="secondary" onclick="deleteNote()">Удалить</button>
+      <div id="resDelete" class="result"></div>
+    </div>
+
+    <div class="section-title">Получить / Поиск / Список</div>
+    <div class="card">
+      <h3>Получить по ID</h3>
+      <div class="desc">GET /notes/{id}</div>
+      <label>ID</label><input id="gNoteId" placeholder="например: 1">
+      <button onclick="getNote()">Получить</button>
+      <div id="resGet" class="result"></div>
+    </div>
+
+    <div class="card">
+      <h3>Поиск по тексту</h3>
+      <div class="desc">GET /notes?q=...</div>
+      <label>Поисковый запрос</label><input id="sQ" placeholder="ключевые слова">
+      <div class="row">
+        <div><label>limit</label><input id="sLimit" value="20"></div>
+        <div><label>offset</label><input id="sOffset" value="0"></div>
+      </div>
+      <button onclick="listNotes()">Искать</button>
+      <div id="resList" class="result"></div>
+    </div>
+
+    <div class="card">
+      <h3>Список всех</h3>
+      <div class="desc">GET /notes (без q)</div>
+      <div class="row">
+        <div><label>limit</label><input id="allLimit" value="20"></div>
+        <div><label>offset</label><input id="allOffset" value="0"></div>
+      </div>
+      <button onclick="listAll()">Показать все</button>
+      <div id="resAll" class="result"></div>
+    </div>
+
+    <div class="section-title">Похожие / Популярные</div>
+    <div class="card">
+      <h3>Похожие заметки</h3>
+      <div class="desc">GET /notes/{id}/similar</div>
+      <label>ID</label><input id="simNoteId" placeholder="например: 1">
+      <label>Limit</label><input id="simLimit" value="5">
+      <button onclick="similarNotes()">Найти похожие</button>
+      <div id="resSimilar" class="result"></div>
+    </div>
+
+    <div class="card">
+      <h3>Популярные заметки</h3>
+      <div class="desc">GET /notes/popular</div>
+      <button onclick="popularNotes()">Показать топ</button>
+      <div id="resPopular" class="result"></div>
+    </div>
+
+    <div class="section-title">Версионирование</div>
+    <div class="card">
+      <h3>Версии заметки</h3>
+      <div class="desc">GET /notes/{id}/versions</div>
+      <label>ID</label><input id="vNoteId" placeholder="например: 1">
+      <button onclick="listVersions()">Показать версии</button>
+      <div id="resVersions" class="result"></div>
+    </div>
+
+    <div class="card">
+      <h3>Откатить к версии</h3>
+      <div class="desc">POST /notes/{id}/restore</div>
+      <label>ID</label><input id="rNoteId" placeholder="например: 1">
+      <label>Версия</label><input id="rVersion" value="1">
+      <button onclick="restoreVersion()">Откатить</button>
+      <div id="resRestore" class="result"></div>
+    </div>
+
+    <div class="section-title">Теги</div>
+    <div class="card">
+      <h3>Список тегов</h3>
+      <div class="desc">GET /tags</div>
+      <label>Limit</label><input id="tagLimit" value="20">
+      <button onclick="listTags()">Показать теги</button>
+      <div id="resTags" class="result"></div>
+    </div>
+
+    <div class="card">
+      <h3>Заметки по тегу</h3>
+      <div class="desc">GET /graph/tags/{tag}</div>
+      <label>Тег</label><input id="tagName" placeholder="например: study">
+      <label>Limit</label><input id="tagNotesLimit" value="20">
+      <button onclick="notesByTag()">Показать по тегу</button>
+      <div id="resNotesTag" class="result"></div>
+    </div>
+  </main>
+
+  <script>
+    function base() { return document.getElementById('baseUrl').value.replace(/\/$/, ''); }
+    function setGlobalStatus(text) { document.getElementById('globalStatus').innerText = text; }
+
+    function renderList(containerId, items) {
+      const box = document.getElementById(containerId);
+      if (!items || !items.length) { box.innerHTML = '<span style="color:var(--muted)">пусто</span>'; return; }
+      box.innerHTML = items.map(renderNote).join('');
+    }
+    function renderNote(note) {
+      if (!note) return '';
+      const tags = (note.tags || []).map(t => `<span class="pill">${t}</span>`).join('');
+      return `<div style="padding:8px; border-bottom:1px solid var(--border);">
+          <div><strong>ID:</strong> ${note.id}</div>
+          <div><strong>Title:</strong> ${note.title || ''}</div>
+          <div><strong>Content:</strong> ${note.content || ''}</div>
+          <div><strong>Tags:</strong> ${tags || '<span class="pill" style="background:#e5e5ea;color:var(--muted)">нет</span>'}</div>
+          <div style="color:var(--muted); font-size:12px;">created: ${note.created_at || ''} • updated: ${note.updated_at || ''}</div>
+        </div>`;
+    }
+
+    async function call(method, path, body, onSuccess, onError) {
+      const opts = { method, headers: {} };
+      if (body !== undefined && body !== null && method !== 'GET' && method !== 'HEAD') {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
+      }
+      try {
+        const res = await fetch(base() + path, opts);
+        const text = await res.text();
+        let data = text; try { data = JSON.parse(text); } catch {}
+        setGlobalStatus(`Последний запрос: ${method} ${path} → ${res.status}`);
+        if (res.ok && onSuccess) onSuccess(data); else if (!res.ok && onError) onError(data);
+      } catch (err) {
+        setGlobalStatus(`Ошибка запроса: ${err}`);
+        if (onError) onError(err);
+      }
+    }
+
+    function parseTags(val) { if (!val) return []; return val.split(',').map(s => s.trim()).filter(Boolean); }
+
+    function createNote() {
+      call('POST', '/notes', {
+        title: document.getElementById('cTitle').value,
+        content: document.getElementById('cContent').value,
+        tags: parseTags(document.getElementById('cTags').value),
+      }, d => document.getElementById('resCreate').innerHTML = renderNote(d),
+         e => document.getElementById('resCreate').innerText = JSON.stringify(e, null, 2));
+    }
+
+    function getNote() {
+      const id = document.getElementById('gNoteId').value;
+      call('GET', `/notes/${id}`, null,
+        d => document.getElementById('resGet').innerHTML = renderNote(d),
+        e => document.getElementById('resGet').innerText = JSON.stringify(e, null, 2));
+    }
+
+    function updateNote() {
+      const id = document.getElementById('uId').value;
+      call('PUT', `/notes/${id}`, {
+        title: document.getElementById('uTitle').value || undefined,
+        content: document.getElementById('uContent').value || undefined,
+        tags: parseTags(document.getElementById('uTags').value),
+      }, d => document.getElementById('resUpdate').innerHTML = renderNote(d),
+         e => document.getElementById('resUpdate').innerText = JSON.stringify(e, null, 2));
+    }
+
+    function deleteNote() {
+      const id = document.getElementById('dId').value;
+      call('DELETE', `/notes/${id}`, null,
+        d => document.getElementById('resDelete').innerText = JSON.stringify(d, null, 2),
+        e => document.getElementById('resDelete').innerText = JSON.stringify(e, null, 2));
+    }
+
+    function listNotes() {
+      const q = document.getElementById('sQ').value;
+      const limit = document.getElementById('sLimit').value;
+      const offset = document.getElementById('sOffset').value;
+      const params = new URLSearchParams();
+      if (q) params.append('q', q);
+      if (limit) params.append('limit', limit);
+      if (offset) params.append('offset', offset);
+      call('GET', `/notes?${params.toString()}`, null,
+        d => renderList('resList', d),
+        e => document.getElementById('resList').innerText = JSON.stringify(e, null, 2));
+    }
+
+    function listAll() {
+      const limit = document.getElementById('allLimit').value;
+      const offset = document.getElementById('allOffset').value;
+      const params = new URLSearchParams();
+      if (limit) params.append('limit', limit);
+      if (offset) params.append('offset', offset);
+      call('GET', `/notes?${params.toString()}`, null,
+        d => renderList('resAll', d),
+        e => document.getElementById('resAll').innerText = JSON.stringify(e, null, 2));
+    }
+
+    function listVersions() {
+      const id = document.getElementById('vNoteId').value;
+      call('GET', `/notes/${id}/versions`, null,
+        d => {
+          const box = document.getElementById('resVersions');
+          if (!d || !d.length) { box.innerText = 'пусто'; return; }
+          box.innerHTML = d.map(v => `<div style="padding:6px;border-bottom:1px solid var(--border);"><strong>v${v.version}</strong> • ${v.title || ''}</div>`).join('');
+        },
+        e => document.getElementById('resVersions').innerText = JSON.stringify(e, null, 2));
+    }
+
+    function restoreVersion() {
+      const id = document.getElementById('rNoteId').value;
+      if (!id) {
+        document.getElementById('resRestore').innerText = 'Укажите ID заметки';
+        return;
+      }
+      const ver = document.getElementById('rVersion').value || 1;
+      call('POST', `/notes/${id}/restore`, { version: Number(ver) },
+        d => document.getElementById('resRestore').innerHTML = renderNote(d),
+        e => document.getElementById('resRestore').innerText = JSON.stringify(e, null, 2));
+    }
+
+    function similarNotes() {
+      const id = document.getElementById('simNoteId').value;
+      const limit = document.getElementById('simLimit').value;
+      call('GET', `/notes/${id}/similar?limit=${limit}`, null,
+        d => {
+          const box = document.getElementById('resSimilar');
+          const similar = d && Array.isArray(d.similar) ? d.similar : d;
+          const source = d && d.source ? d.source : null;
+          let html = '';
+          if (source) {
+            html += `<div style="margin-bottom:8px;"><div style="font-weight:700;">Исходная заметка</div>${renderNote(source)}</div>`;
+          }
+          if (!similar || !similar.length) {
+            html += '<div style="color:var(--muted)">нет похожих</div>';
+          } else {
+            html += similar.map(item => `<div style="padding:6px;border-bottom:1px solid var(--border);"><strong>score:</strong> ${item.score.toFixed(4)}${renderNote(item.note)}</div>`).join('');
+          }
+          box.innerHTML = html;
+        },
+        e => document.getElementById('resSimilar').innerText = JSON.stringify(e, null, 2));
+    }
+
+    function popularNotes() {
+      call('GET', '/notes/popular', null,
+        d => {
+          const box = document.getElementById('resPopular');
+          if (!d || !d.length) { box.innerText = 'пусто'; return; }
+          box.innerHTML = d.map(item => `<div style="padding:6px;border-bottom:1px solid var(--border);"><strong>score:</strong> ${item.score.toFixed(2)}${renderNote(item.note)}</div>`).join('');
+        },
+        e => document.getElementById('resPopular').innerText = JSON.stringify(e, null, 2));
+    }
+
+    function listTags() {
+      const limit = document.getElementById('tagLimit').value;
+      call('GET', `/tags?limit=${limit}`, null,
+        d => {
+          const box = document.getElementById('resTags');
+          if (!d || !d.length) { box.innerText = 'тегов нет'; return; }
+          box.innerHTML = d.map(t => `<span class="pill">${t}</span>`).join('');
+        },
+        e => document.getElementById('resTags').innerText = JSON.stringify(e, null, 2));
+    }
+
+    function notesByTag() {
+      const tag = document.getElementById('tagName').value;
+      const limit = document.getElementById('tagNotesLimit').value;
+      call('GET', `/graph/tags/${encodeURIComponent(tag)}?limit=${limit}`, null,
+        d => renderList('resNotesTag', d),
+        e => document.getElementById('resNotesTag').innerText = JSON.stringify(e, null, 2));
+    }
+  </script>
+</body>
+</html>
